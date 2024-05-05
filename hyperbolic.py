@@ -1,11 +1,9 @@
 # Based off of code by Anastasiia Tsvietkova, Dale Koenig & Alex Lowen.
 
 import ast
-from functools import cache
 from spherogram import links
 import numpy as np
 import sympy
-import scipy.optimize
 
 BLACK = "Black"
 WHITE = "White"
@@ -24,30 +22,37 @@ def k(edge):
         return 0
 
 
-def kappa(edge_1, edge_2, oriented_edges):
+def kappa(edge_1, edge_2):
     """This is just an EQUAL for existance in oriented_edges."""
-    return 1 if (edge_1 in oriented_edges) == (edge_2 in oriented_edges) else -1
+
+    edge_1_oriented = any(edge_1.strand_index == head for head, tail in edge_1.crossing.directions)
+    edge_2_oriented = any(edge_2.strand_index == head for head, tail in edge_2.crossing.directions)
+    return 1 if edge_1_oriented == edge_2_oriented else -1
 
 
-@cache
-def get_f_n(shape_parameters, n=None):
-    if n is None: n = len(shape_parameters)
-    if n < 3:
-        raise ValueError("parameter n must be at least 3")
-    elif n == 3:
-        return [1 - s for s in shape_parameters]  # this is assigning the first entry in shape_parameters to correspond to zeta_2 in the notation of the paper
-    elif n == 4:
-        return [1 - x - y for x, y in zip(shape_parameters, shape_parameters[1:] + shape_parameters[:1])]
-    else:
-        f_twoback = get_f_n(shape_parameters, n - 2)
-        f_oneback = get_f_n(shape_parameters, n - 1)
-        shape_n = shape_parameters[2:] + shape_parameters[:2]  # Rotate
-        return [x - y * z for x, y, z in zip(f_oneback, shape_n, f_twoback)]
+def get_f_n(zetas, offset):
+    """See Page 4 of https://arxiv.org/pdf/1108.0510."""
+    # Don't forget that the papers shape parameters are 1--indexed while our lists are 0--indexed.
+    n = len(zetas)
+    assert n >= 3
+    assert offset in {-1, 0, 1}
+    if n == 3:
+        return 1 - zetas[1 + offset]
+
+    f = 1 - zetas[1 + offset]
+    g = 1 - zetas[1 + offset] - zetas[2 + offset]
+    # We start with f = f_3, g = f_4.
+    # We recursively build f_n = f_{n-1} - zeta_{n-1} f_{n-2}.
+    for i in range(4, n):
+        f, g = g, g - zetas[i - 1 + offset] * f
+        # Now f = f_{i}, g = f_{i+1}.
+
+    return g
 
 
 def solve(equations, crossing_vars, edge_vars, crossing_labels, edge_labels, num_iterations=150):
     """Find a solution to the given system of equations.
-    
+
     Uses Newton--Raphson iteration.
     It feels like we should be able to replace this with something like:
       scipy.optimize.root(equations, labels, jac=Df)
@@ -67,13 +72,12 @@ def solve(equations, crossing_vars, edge_vars, crossing_labels, edge_labels, num
         labels = np.around(labels + incx, 6)
 
     # Extract.
-    crossing_solutions, edge_solutions = labels[:len(crossing_labels)], labels[len(crossing_labels):len(crossing_labels)+len(edge_labels)]
+    crossing_solutions, edge_solutions = labels[: len(crossing_labels)], labels[len(crossing_labels) : len(crossing_labels) + len(edge_labels)]
     return crossing_solutions, edge_solutions
 
 
 def analyze(L):
     faces = [[x.opposite() for x in face] for face in L.faces()]  # This orientation matters since it defines clockwise in each region.
-    oriented_edges = set(L.crossing_entries())  # Some choice of orientation on each edge.
     crossings = L.crossings
 
     # Crossing variables and starting labels:
@@ -119,22 +123,22 @@ def analyze(L):
             equations.append(crossing_vars[e1[0].label] - crossing_vars[e2[0].label])  # Crossings must be equal.
         else:  # len(face) >= 3:  # Generate equations for faces with more than 2 sides.
             shape_params = [
-                kappa(prev_edge, edge, oriented_edges)
+                kappa(prev_edge, edge)
                 * crossing_vars[edge[0].label]
                 / edge_vars[edge_indices[edge]]
                 / edge_vars[edge_indices[prev_edge]]
                 for edge, prev_edge in zip(face, face[-1:] + face[:-1])
             ]
 
-            f_n = get_f_n(tuple(shape_params))
+            f_n = [get_f_n(shape_params, offset) for offset in [-1, 0, 1]]
             # The f_n functions have fractions, multiply through to clear denominators.
             f_n = [sympy.simplify(sympy.fraction(sympy.together(f))[0]) for f in f_n]  # The [0] here is selecting the numerator.
 
-            equations = equations + f_n[:3]  # Why do we only use the first three f_n's. !?!
+            equations.extend(f_n)
 
     print("Solve the following system of equations:")
     for eq in equations:
-        print(f"{eq} = 0")
+        print(f"\t{eq} = 0")
 
     crossing_solutions, edge_solutions = solve(equations, crossing_vars, edge_vars, crossing_labels, edge_labels)
 
@@ -181,10 +185,9 @@ if __name__ == "__main__":
     temp_inp = "DT: [(6, -10, -14, 12, -16, -2, 18, -4, -8)]"
     if temp_inp.startswith("DT: "):
         L = links.Link(temp_inp)
-        print("Analyzing link with DT code {}.".format(L.DT_code()))
+        print(f"Analyzing link with DT code {L.DT_code()}.")
     else:
         L = links.Link(ast.literal_eval(temp_inp))
-        print("Analyzing link with PD code {}.".format(L.PD_code()))
-    
-    analyze(L)
+        print(f"Analyzing link with PD code {L.PD_code()}")
 
+    analyze(L)

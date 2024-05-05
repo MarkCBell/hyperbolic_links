@@ -1,0 +1,35 @@
+[pylint.main]
+load-plugins=
+    pylint.extensions.bad_builtin,
+    pylint.extensions.no_self_use,
+
+bad-functions=
+    map,
+    filter,
+
+[pylint.messages_control]
+fail-on=
+    useless-suppression,
+disable=
+    duplicate-code,
+    fixme,
+    invalid-name,
+    line-too-long,
+    multiple-statements,
+    no-else-raise,
+    no-else-return,
+    protected-access,
+    too-many-branches,
+    too-many-instance-attributes,
+    too-many-locals,
+    too-many-public-methods,
+    too-many-return-statements,
+    too-many-statements,
+    trailing-newlines,
+    trailing-whitespace,
+    unnecessary-lambda-assignment,
+    unused-variable,
+    use-dict-literal,
+enable=
+    bad-builtin,
+    useless-suppression,
